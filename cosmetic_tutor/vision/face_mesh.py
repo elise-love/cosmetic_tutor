@@ -29,7 +29,6 @@ class FaceMeshDetector:
         return FaceLandmarks(points=pts, confidence=1.0)
 
 
-
 """
 MediaPipe is a real-time, 
 cross-platform framework by Google for building perception pipelines such as face, hand, and pose detection.

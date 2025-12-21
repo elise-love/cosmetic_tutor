@@ -1,8 +1,13 @@
 # run_webcam.py
+import sys
+import os
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import cv2
 from cosmetic_tutor.config import AppConfig
 from cosmetic_tutor.pipeline.runner import AppRunner
-import sys
 
 def main():
     print(sys.executable)
@@ -39,7 +44,8 @@ def main():
         key = cv2.waitKey(1) & 0xFF
 
         # Quit application
-        if key == ord('q'):
+        if key in (ord('q'), 27):  # 27 = ESC
+            print("Exit requested")
             break
 
         #baseline calibration using current mean a* values
@@ -56,3 +62,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+#.\.venv\Scripts\python.exe .\run_webcam.py
