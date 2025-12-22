@@ -1,127 +1,86 @@
-﻿#roi_cheeks.py
+# roi_cheeks.py
 """
-Check ROI construction module.
+Cheek ROI (Region of Interest) construction module.
 
-This module constructs left and right regions of interest (ROI)
-based on facial landmarks detected by FaceMesh.
-The resulting ROIs are representes as both polygon coordinates and binary masks.
-Enables subsequent color analysis and coverage computations.
+This module converts facial landmarks from MediaPipe Face Mesh
+into polygon-based cheek regions suitable for color analysis.
+Each ROI includes both polygon boundaries and binary masks.
 """
 
 import numpy as np
 import cv2
 from cosmetic_tutor.types import ROI, FaceLandmarks
 
-def _poly_from_indices(lms: FaceLandmarks, idxs: list[int], w: int, h: int) -> np.ndarray:
-    pts_norm = lms.points[idxs]  # (M,2)
-    #select landmark points by indexes
-
-    pts_px = np.stack(
-        [pts_norm[:, 0] * w, pts_norm[:, 1] * h],
-        axis=1
-    ).astype(np.int32)
-    #convert normalized coordinates to pixel coordinates
-    return pts_px
-
-    """
-    Convert selected facial landmark indices into a polygon in pixel coordinates.
-
-    Args:
-        lms (FaceLandmarks):
-            Detected facial landmarks with normalized coordinates in [0, 1].
-
-        idxs (list[int]):
-            Indices of landmarks defining the target facial region (ROI).
-
-        w (int):
-            Width of the input image in pixels.
-
-        h (int):
-            Height of the input image in pixels.
-
-    Returns:
-        np.ndarray:
-            An (M, 2) array of integer pixel coordinates representing
-            the polygon boundary of the ROI.
-    """
-
-#從多邊形邊界產生二值 ROI 遮罩（mask）。
-def _mask_from_poly(poly_px: np.ndarray, w: int, h: int) -> np.ndarray:
-    #initialize an empyty binary mask
-    mask = np.zeros((h, w), dtype=np.uint8)
-
-    #fill polygon area with white (255)
-    cv2.fillPoly(mask, [poly_px], 255)
-
-    return mask
-
 class CheekROIBuilders:
     """
-    Build left/right cheek ROI masks from FaceMesh landmarks.
-    Landmark indices are adjustable.
+    Builds left and right cheek ROIs from facial landmarks.
+    
+    Uses MediaPipe Face Mesh landmark indices to define approximate
+    cheek regions, then converts normalized coordinates to pixel space
+    and generates binary masks for color feature extraction.
     """
-    LEFT_CHEEK = [234, 93, 132, 58, 172, 136, 150, 176]
-    RIGHT_CHEEK = [454, 323, 361, 288, 397, 365, 379, 400]
-
-    #create left/right cheek ROIs according to given landmark points and image shape
-    def build(self, lms: FaceLandmarks, bgr_shape: tuple[int, int, int]) -> tuple[ROI, ROI]:
-        #img height, width, channels
-        h, w, _ = bgr_shape
-
-        #convert landmark indices to pixel-space polygons
-        left_poly = _poly_from_indices(lms, self.LEFT_CHEEK, w, h)
-        right_poly = _poly_from_indices(lms, self.RIGHT_CHEEK, w, h)
-
-        #generate binary masks for pixel-level analysis
-        left_mask = _mask_from_poly(left_poly, w, h)
-        right_mask = _mask_from_poly(right_poly, w, h)
-
-        #wrap geometry and mask into standardized ROI objs
-        left_roi = ROI(name="left_cheek", polygon_px=left_poly, mask=left_mask)
-        right_roi = ROI(name="right_cheek", polygon_px=right_poly, mask=right_mask)
+    
+    def __init__(self):
+        # MediaPipe Face Mesh landmark indices for left and right cheeks
+        # These are approximate regions - may need tuning for optimal results
+        self.left_cheek_indices = [
+            116, 117, 118, 119, 120, 121, 126, 142, 36, 205, 206, 207, 213, 192, 147, 177, 215, 138, 135, 169, 170, 140, 171, 175
+        ]
+        
+        self.right_cheek_indices = [
+            345, 346, 347, 348, 349, 350, 355, 371, 266, 425, 426, 427, 436, 416, 376, 401, 435, 367, 364, 394, 395, 369, 396, 400
+        ]
+    
+    def build(self, landmarks: FaceLandmarks, image_shape: tuple) -> tuple[ROI, ROI]:
+        """
+        Build left and right cheek ROIs from facial landmarks.
+        
+        Args:
+            landmarks: FaceLandmarks object with normalized coordinates [0,1]
+            image_shape: (height, width, channels) of the source image
+        
+        Returns:
+            Tuple of (left_roi, right_roi) ROI objects
+        """
+        h, w = image_shape[:2]
+        
+        # Convert normalized landmarks to pixel coordinates
+        points_px = landmarks.points * [w, h]
+        
+        # Extract cheek polygons using predefined landmark indices
+        left_polygon = points_px[self.left_cheek_indices].astype(np.int32)
+        right_polygon = points_px[self.right_cheek_indices].astype(np.int32)
+        
+        # Create binary masks for each cheek region
+        left_mask = self._create_mask(left_polygon, (h, w))
+        right_mask = self._create_mask(right_polygon, (h, w))
+        
+        # Create ROI objects
+        left_roi = ROI(
+            name="left_cheek",
+            polygon_px=left_polygon,
+            mask=left_mask
+        )
+        
+        right_roi = ROI(
+            name="right_cheek",
+            polygon_px=right_polygon,
+            mask=right_mask
+        )
+        
         return left_roi, right_roi
 
-"""
-ROI（Region of Interest）是影像中「你真正關心、要分析的那一塊區域」。
-ROI refers to a selected subset of an image that is relevant for a specific analysis task, 
-allowing computation to focus only on meaningful regions while ignoring irrelevant background information.
-"""
-
-"""
-Pixel-wise (pixel-level) 
-means performing operations independently 
-on each individual pixel in an image.
-
-An image is a grid of tiny squares (pixels).
-Pixel-level → look at pixels one by one
-Region-level → look at a whole area at once
-Image-level → treat the entire image as one object
-Pixel-wise means:
-“For every pixel, do something.”
-"""
-
-"""
-polygon_px=left_poly
-👉 左臉頰的幾何邊界
-是一個 (M, 2) 的 numpy array
-每一點是 pixel 座標 (x, y)
-代表臉頰的外框多邊形
-
-用途：
-畫在畫面上 debug
-理解 ROI 的幾何形狀
-方便視覺化
-"""
-
-"""
-mask=left_mask
-👉 左臉頰的像素級遮罩（binary mask）
-shape = (H, W)
-255 = 在左臉頰裡
-0 = 不在
-
-用途：
-算平均顏色
-算覆蓋率
-快速 pixel-wise 運算
-"""
+    def _create_mask(self, polygon: np.ndarray, image_shape: tuple) -> np.ndarray:
+        """
+        Create a binary mask from a polygon.
+        
+        Args:
+            polygon: Array of polygon vertices in pixel coordinates (N, 2)
+            image_shape: (height, width) of the target mask
+    
+        Returns:
+            Binary mask array where 255 = inside polygon, 0 = outside
+        """
+        mask = np.zeros(image_shape, dtype=np.uint8)
+        cv2.fillPoly(mask, [polygon], 255)
+        return mask

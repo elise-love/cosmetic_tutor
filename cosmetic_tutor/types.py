@@ -16,7 +16,7 @@ class Frame:
 
 @dataclass
 class FaceLandmarks:
-    #normaliized coordinates in [0,1]
+    #normalized coordinates in [0,1]
     points: np.ndarray #shape: (N,2) float32
     confidence: float = 1.0
 
@@ -45,9 +45,18 @@ class BlushMetrics:
     left_coverage: float
     right_coverage: float
 
-    #°¾²¾¤è¦V
+    #¦ì¸m°¾²¾
     offset_dir: str
+    
     debug: Dict[str, Any]
+
+    # Detailed placement analysis
+    left_blush_centroid: Optional[Point2D] = None
+    right_blush_centroid: Optional[Point2D] = None
+    left_roi_centroid: Optional[Point2D] = None
+    right_roi_centroid: Optional[Point2D] = None
+    left_offset_vector: Optional[Point2D] = None
+    right_offset_vector: Optional[Point2D] = None
 
 @dataclass
 class Advice:

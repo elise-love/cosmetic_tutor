@@ -65,7 +65,15 @@ class BlushScorer:
         right_cov = coverage_above_a(bgr, right_roi.mask, self.th.red_a_threshold)
 
         #placement offset direction: compares high-red centroidvs ROI centroid
-        offset_dir = self._offset_direction(bgr, left_roi, right_roi)
+        (
+            offset_dir,
+            left_blush_centroid,
+            right_blush_centroid,
+            left_roi_centroid,
+            right_roi_centroid,
+            left_offset_vector,
+            right_offset_vector,
+        ) = self._offset_direction(bgr, left_roi, right_roi)
 
         #wrap up results to a metrics object
         return BlushMetrics(
@@ -77,10 +85,16 @@ class BlushScorer:
             left_coverage=left_cov,
             right_coverage=right_cov,
             offset_dir=offset_dir,
+            left_blush_centroid=left_blush_centroid,
+            right_blush_centroid=right_blush_centroid,
+            left_roi_centroid=left_roi_centroid,
+            right_roi_centroid=right_roi_centroid,
+            left_offset_vector=left_offset_vector,
+            right_offset_vector=right_offset_vector,
             debug={} #placeholder for future debug info
         )
 
-    def _offset_direction(self, bgr: np.ndarray, left_roi: ROI, right_roi: ROI) -> str:
+    def _offset_direction(self, bgr: np.ndarray, left_roi: ROI, right_roi: ROI) -> tuple[str, tuple[float, float] | None, tuple[float, float] | None, tuple[float, float], tuple[float, float], tuple[float, float] | None, tuple[float, float] | None]:
         """
         Heuristic offset detection using centroids.
 
@@ -98,56 +112,60 @@ class BlushScorer:
         lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
         a = lab[:, :, 1].astype(np.float32) # a* in [0,255] under OpenCV Lab
 
-        def roi_offset(roi: ROI) -> tuple[float, float] | None:
+        def roi_offset(roi: ROI) -> tuple[tuple[float, float] | None, tuple[float, float], tuple[float, float] | None]:
             #select pixels that are (1) insise ROI and (2) "red enough" to be considerded blush
             ys, xs = np.where((roi.mask == 255) & (a > self.th.red_a_threshold))
             
+            # ROI centroid from polygon
+            poly = roi.polygon_px.astype(np.float32)
+            roi_cx = float(poly[:, 0].mean())
+            roi_cy = float(poly[:, 1].mean())
+            roi_centroid = (roi_cx, roi_cy)
+
             # too few pixels, treat as no blush / unstable
             if xs.size < 30:  
-                return None
+                return None, roi_centroid, None
 
             #convert pixel coords into an (N,2) point set for centroid computation
             pts = np.stack([xs, ys], axis=1)
 
             #centroid of high-red pixels
-            c = centroid_of_points(pts)
-            if c is None:
-                return None
-
-            # ROI centroid from polygon
-            poly = roi.polygon_px.astype(np.float32)
-            roi_cx = float(poly[:, 0].mean())
-            roi_cy = float(poly[:, 1].mean())
+            blush_centroid = centroid_of_points(pts)
+            if blush_centroid is None:
+                return None, roi_centroid, None
 
             #return offset vector: positive x means to the right, positive y meanns downward
-            return (c[0] - roi_cx, c[1] - roi_cy)
+            offset_vector = (blush_centroid[0] - roi_cx, blush_centroid[1] - roi_cy)
+            return blush_centroid, roi_centroid, offset_vector
 
         #compute offsets for left and right cheeks
-        lo = roi_offset(left_roi)
-        ro = roi_offset(right_roi)
+        left_blush_centroid, left_roi_centroid, left_offset_vector = roi_offset(left_roi)
+        right_blush_centroid, right_roi_centroid, right_offset_vector = roi_offset(right_roi)
 
         # decide direction: if both missing, OK
-        if lo is None and ro is None:
-            return "OK"
+        if left_offset_vector is None and right_offset_vector is None:
+            return "OK", left_blush_centroid, right_blush_centroid, left_roi_centroid, right_roi_centroid, left_offset_vector, right_offset_vector
 
         # average available offsets
         offsets = []
-        if lo is not None: 
-            offsets.append(lo)
-        if ro is not None: 
-            offsets.append(ro)
+        if left_offset_vector is not None: 
+            offsets.append(left_offset_vector)
+        if right_offset_vector is not None: 
+            offsets.append(right_offset_vector)
 
         ox = float(np.mean([o[0] for o in offsets]))
         oy = float(np.mean([o[1] for o in offsets]))
 
         #decision thresholds are in pixel units, tune with real data
         if abs(ox) < 8 and abs(oy) < 8:
-            return "OK"
+            direction = "OK"
 
         #if horizontal offset domiates
-        if abs(ox) >= abs(oy):
-            return "TOO_OUTSIDE" if ox > 0 else "TOO_INSIDE"
+        elif abs(ox) >= abs(oy):
+            direction = "TOO_OUTSIDE" if ox > 0 else "TOO_INSIDE"
 
         #if vertical offset dominates
         else:
-            return "TOO_LOW" if oy > 0 else "TOO_HIGH"
+            direction = "TOO_LOW" if oy > 0 else "TOO_HIGH"
+        
+        return direction, left_blush_centroid, right_blush_centroid, left_roi_centroid, right_roi_centroid, left_offset_vector, right_offset_vector
