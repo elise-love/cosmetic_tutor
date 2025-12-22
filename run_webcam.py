@@ -1,12 +1,30 @@
 ﻿import sys
 import os
+from pathlib import Path
 
+# =========================================================
 # Add the project root to the Python path
+# =========================================================
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# =========================================================
+# Load environment variables (.env)  ← 唯一新增／修正
+# =========================================================
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / ".env"
+    load_dotenv(env_path)
+    print(f"[ENV] Loaded environment variables from {env_path}")
+except ImportError:
+    print("[ENV] python-dotenv not installed, using system environment variables")
+except Exception as e:
+    print(f"[ENV] Error loading .env file: {e}")
+
+# =========================================================
+# Imports（以下全部保持原樣）
+# =========================================================
 import cv2
 import numpy as np
-from pathlib import Path
 from cosmetic_tutor.config import AppConfig
 from cosmetic_tutor.pipeline.runner import AppRunner
 
@@ -42,8 +60,7 @@ class BackgroundWindowManager:
             self.background = cv2.resize(self.background, (new_width, new_height))
             self.bg_height, self.bg_width = self.background.shape[:2]
 
-        # Calculate webcam position (top-left corner with some padding)
-        # === white frame region based on background ratio ===
+        # === white frame region ===
         self.frame_x = int(self.bg_width * 0.035)
         self.frame_y = int(self.bg_height * 0.055)
         self.frame_width = int(self.bg_width * 0.58)
@@ -63,7 +80,7 @@ class BackgroundWindowManager:
             cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED
         )
 
-        # === limit window size to screen-friendly resolution ===
+        # === limit window size ===
         MAX_WIN_WIDTH = 1280
         MAX_WIN_HEIGHT = 800
 
@@ -86,13 +103,12 @@ class BackgroundWindowManager:
 
         cv2.resizeWindow("Cosmetic Tutor", self.bg_width, self.bg_height)
 
-        # Set window properties to handle close button
         cv2.setWindowProperty(
             "Cosmetic Tutor",
             cv2.WND_PROP_ASPECT_RATIO,
             cv2.WINDOW_FREERATIO
         )
-        
+
         self.button_area_x = int(self.bg_width * 0.06)
         self.button_area_y = int(self.bg_height * 0.81)
         self.button_area_width = int(self.bg_width * 0.65)
@@ -109,8 +125,7 @@ class BackgroundWindowManager:
         )
 
     def _get_background_path(self) -> Path:
-        current_file = Path(__file__)
-        project_root = current_file.parent
+        project_root = Path(__file__).parent
 
         bg_jpg = project_root / "cosmetic_tutor" / "ui" / "background.jpg"
         bg_png = project_root / "cosmetic_tutor" / "ui" / "background.png"
@@ -130,18 +145,16 @@ class BackgroundWindowManager:
         if webcam_frame is not None:
             h, w = webcam_frame.shape[:2]
 
-            # === keep aspect ratio ===
             scale = min(
                 self.frame_width / w,
                 self.frame_height / h
-            )*1.15
+            ) * 1.15
 
             new_w = int(w * scale)
             new_h = int(h * scale)
 
             resized_webcam = cv2.resize(webcam_frame, (new_w, new_h))
 
-            # Center webcam inside white frame (with slight left-down offset)
             OFFSET_X = int(self.frame_width * 0.05)
             OFFSET_Y = int(self.frame_height * 0.09)
 
@@ -286,6 +299,7 @@ class BackgroundWindowManager:
                 color = (230, 215, 255)
             else:
                 color = (255, 255, 255)
+
             roi = frame[y:y+h, x:x+w].copy()
             overlay = roi.copy()
 
@@ -301,7 +315,6 @@ class BackgroundWindowManager:
             cv2.addWeighted(overlay, 0.45, roi, 0.55, 0, roi)
             frame[y:y+h, x:x+w] = roi
 
-            # ---- text ----
             font_scale = 0.5
             thickness = 1
             text_size = cv2.getTextSize(
@@ -324,7 +337,6 @@ class BackgroundWindowManager:
                 thickness,
                 cv2.LINE_AA
             )
-
 
     def show(self, frame: np.ndarray) -> None:
         cv2.imshow("Cosmetic Tutor", frame)
@@ -405,6 +417,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 #.\.venv\Scripts\python.exe .\run_webcam.py
